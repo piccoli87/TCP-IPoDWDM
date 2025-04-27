@@ -56,6 +56,32 @@ iperf_csv_header = ['time', 'src_addr', 'src_port', 'dst_addr' ,'dst_port', 'oth
 
 
 class DumbbellTopo(Topo):
+    """ Dumbbell topology class.
+
+        This class requires the use of TCLink class instead of the default Link class to create the links.
+
+        The topology is described in section 5.4 of:
+        https://www.nist.gov/sites/default/files/documents/itl/antd/P9-SP-500-282-Chapter5.pdf
+
+          s1------s2    s1 & s2 are backbone routers 1 & 2
+           |       |
+          s3      s4    s3 and s4 are access routers 1 & 2
+          /\      /\
+        h1  h3  h2  h4  h1 & h3 are source hosts 1 & 2, and h2 & h4 are receiver hosts 1 & 2
+
+        The hosts (h1..h4) can transmit/receive at 960Mbps (80pkts/ms). The links between the the hosts and the access
+        routers will have a bandwidth of 960Mbps, a delay of 0ms and a max queue size of 100% * bandwidth * delay.
+        The backbone routers (s1 & s2) can transmit/receive at 984Mbps (82pkts/ms). The link between the backbone
+        routers will have a bandwidth of 984Mbps and a max queue size of 100% * bandwidth * delay.
+        There are tests for 21, 81, and 162ms one-way propagation delay in the link between s1 and s2 which makes RTTs
+        of 42, 162 and 324ms.
+        The access routers (s3 & s4) can transmit/receive at 252Mbps (21pkts/ms). The links between the access routers
+        and the backbone routers will have a bandwidth of 250Mbps and a delay of 0ms.
+        The access routers have buffers or max queue size= 20% * bandwidth * delay. The links between the access
+        routers and the backbone routers will have a max queue size = 0.2 * bandwidth * delay, where the bandwidth is
+        252Mbps = 21 packets per ms for packets of 1500B size, and delay is the one-way propagation delay in ms.
+        For all calculations, we assume a packet size (MTU) of 1500Bytes.
+    """
 
     def build(self, delay=2):
         """ Create the topology by overriding the class parent's method.
@@ -63,12 +89,12 @@ class DumbbellTopo(Topo):
             :param  delay   One way propagation delay, delay = RTT / 2. Default is 2ms.
         """
         # The bandwidth (bw) is in Mbps, delay in milliseconds and queue size is in packets
-        br_params = dict(bw=200, delay='{0}ms'.format(delay), max_queue_size=82*delay,
+        br_params = dict(bw=192, delay='{0}ms'.format(delay), max_queue_size=16*delay,
                          use_htb=True)  # backbone router interface tc params
-        ar_params = dict(bw=100, delay='0ms', max_queue_size=(21*delay*20)/100,
+        ar_params = dict(bw=96, delay='0ms', max_queue_size=(8*delay*20)/100,
                          use_htb=True)  # access router intf tc params
         # TODO: remove queue size from hosts and try.
-        hi_params = dict(bw=960, delay='0ms', max_queue_size=80*delay, use_htb=True)  # host interface tc params
+        hi_params = dict(bw=180, delay='0ms', max_queue_size=15*delay, use_htb=True)  # host interface tc params
 
         # Create routers s1 to s4
         s1 = self.addSwitch('s1')
@@ -76,17 +102,45 @@ class DumbbellTopo(Topo):
         s3 = self.addSwitch('s3')
         s4 = self.addSwitch('s4')
 
+        # Optical network elements
+        params = {'transceivers': [('tx1',0*dBm,'C')],
+                  'monitor_mode': 'in'}
+        t1 = self.addSwitch('t1', cls=Terminal, **params)
+        t2 = self.addSwitch('t2', cls=Terminal, **params)
+	    # ADD ROADM as r1
+        r1 = self.addSwitch('r1', cls=ROADM)
+        r2 = self.addSwitch('r2', cls=ROADM)
 
 
 ###################################################
         # Link backbone routers (s1 & s2) together
-        self.addLink(s1, s2, cls=TCLink, **br_params)
-
+#        self.addLink(s1, s2, cls=TCLink, **br_params)
+        # Ethernet links
+        #self.addLink(t1,s1)
+        self.addLink(s1,t1)
+        #self.addLink(h1, t1, port2=1)
+        #self.addLink(h2,s2)
+        self.addLink(s2,t2)
+        
+        # WDM link
+        boost = ('boost', {'target_gain': 3.0*dB})
+        amp1 = ('amp1', {'target_gain': 25*.22*dB})
+        amp2 = ('amp2', {'target_gain': 40*.22*dB})
+        amp3 = ('amp3', {'target_gain': 50*.22*dB})
+#        spans = [5*km, amp1, 5*km, amp2]
+        spans = [5*km]
+        
+        self.addLink(r1, t1, cls=OpticalLink, port1=1, port2=2,
+                     boost1=boost, spans=spans)
+        self.addLink(r2, t2, cls=OpticalLink, port1=1, port2=2,
+                     boost1=boost, spans=spans)
+        self.addLink(r2, r1, cls=OpticalLink, port1=2, port2=2,
+                     boost1=boost, spans=spans, loss = 0)
         
 ###################################################
         # Link access routers (s3 & s4) to the backbone routers
         self.addLink(s1, s3, cls=TCLink, **ar_params)
-        self.addLink(s2, s4, cls=TCLink, **ar_params)
+        self.addLink(s2, s4, cls=TCLink, **br_params)
 
         # Create the hosts h1 to h4, and link them to access router 1
         h1 = self.addHost('h1')
@@ -108,6 +162,22 @@ class DumbbellTopo(Topo):
 #def draw_fairness_plot(time_h1, bw_h1, time_h3, bw_h3, alg, delay,Ganho_Amp):
 def draw_fairness_plot(time_h1, bw_h1, time_h3, bw_h3, alg, delay):
     """ Draw the fairness plot for the iperf client hosts.
+
+            |
+         bw |     /--\
+            |    /    \
+            |   /      ----------------
+            |  /       /
+            |--       /
+           -|--------|-----------------
+        h1-h2 start  h3-h4 start  time
+
+        :param  time_h1 List of time values for host h1.
+        :param  bw_h1   List of bandwidth values for host h1.
+        :param  time_h3 List of time values for host h3.
+        :param  bw_h3   List of bandwidth values for host h3.
+        :param  alg     TCP Congestion Control algorithm used in the test.
+        :param  delay   Delay used in the test.
     """
     print('*** Drawing the fairness plot...')
     plt.plot(time_h1, bw_h1, label='Source Host 1 (h1)')
@@ -181,6 +251,7 @@ def parse_iperf_data(alg, delay, host_addrs):
 
     # Use time's first value as time=0, and convert the bps to Mbps
     first_row = True
+#    with open('iperf_{0}_h1-h2_{1}ms_GAmp_{2}_dB.txt'.format(alg, delay, Ganho_Amp),'r+') as fcsv:    
     with open('iperf_{0}_h1-h2_{1}ms.txt'.format(alg, delay),'r+') as fcsv:
         r = csv.DictReader(fcsv, delimiter=',', fieldnames=iperf_csv_header)
         for row in r:
@@ -204,7 +275,7 @@ def parse_iperf_data(alg, delay, host_addrs):
     # a few seconds after the first cmd, and convert the bps to Mbps
     first_row = True
    
-
+#    with open('iperf_{0}_h3-h4_{1}ms_GAmp_{2}_dB.txt'.format(alg, delay, Ganho_Amp), 'r+') as fcsv:   
     with open('iperf_{0}_h3-h4_{1}ms.txt'.format(alg, delay), 'r+') as fcsv:
         r = csv.DictReader(fcsv, delimiter=',', fieldnames=iperf_csv_header)
         for row in r:
@@ -270,7 +341,14 @@ def tcp_tests(algs, delays, iperf_runtime, iperf_delayed_start):
             print('Host addrs: {0}'.format(host_addrs))
             
             
-    
+            restServer.start()
+            ################%%%%%%%%%%%%%%%%%%%%%%%%%#############3
+            os.system("./config-singlelink_r1r2.sh")
+            info(__doc__)
+            #test(net) if 'test' in argv else CLI(net)
+            restServer.stop()
+            #net.stop()
+        
 
 
             # Run iperf
@@ -292,6 +370,9 @@ def tcp_tests(algs, delays, iperf_runtime, iperf_delayed_start):
             # TODO: run iperfs without the -y C to see if we get errors setting the MSS. Use sudo?
             print("*** Starting iperf client h1...")
 
+#            popens[h1] = h1.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
+#                                   iperf_{1}_{3}_{4}ms_GAmp_{5}_dB.txt'
+#                                  .format(h2.IP(), alg, iperf_runtime, 'h1-h2', delay, Ganho_Amp), shell=True)
             popens[h1] = h1.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
                                    iperf_{1}_{3}_{4}ms.txt'
                                   .format(h2.IP(), alg, iperf_runtime, 'h1-h2', delay), shell=True)
@@ -301,6 +382,9 @@ def tcp_tests(algs, delays, iperf_runtime, iperf_delayed_start):
             sleep(iperf_delayed_start)
 
             print("*** Starting iperf client h3...")
+#            popens[h3] = h3.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
+#                                   iperf_{1}_{3}_{4}ms_GAmp_{5}_dB.txt'
+#                                  .format(h4.IP(), alg, iperf_runtime, 'h3-h4', delay, Ganho_Amp), shell=True)
             popens[h3] = h3.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
                                    iperf_{1}_{3}_{4}ms.txt'
                                   .format(h4.IP(), alg, iperf_runtime, 'h3-h4', delay), shell=True)
@@ -323,10 +407,11 @@ def tcp_tests(algs, delays, iperf_runtime, iperf_delayed_start):
             net.stop()
 
             print('*** Processing data...')
-
+#            data_fairness = parse_iperf_data(alg, delay, host_addrs, Ganho_Amp)
             data_fairness = parse_iperf_data(alg, delay, host_addrs)
 
-
+#            draw_fairness_plot(data_fairness['h1']['time'], data_fairness['h1']['Mbps'],
+#                               data_fairness['h3']['time'], data_fairness['h3']['Mbps'], alg, delay, Ganho_Amp)
             draw_fairness_plot(data_fairness['h1']['time'], data_fairness['h1']['Mbps'],
                                data_fairness['h3']['time'], data_fairness['h3']['Mbps'], alg, delay)
 
@@ -343,7 +428,7 @@ if __name__ == '__main__':
                         help='Time to wait before starting the second iperf client.')
     parser.add_argument('-l', '--log-level', default='info', help='Verbosity level of the logger. Uses `info` by default.')
     parser.add_argument('-t', '--run-test', action='store_true', help='Run the dumbbell topology test.')
-
+#    parser.add_argument('-ga', '--Ganho_Amp', type=int, default=10, help='Parâmetro de ganho do Amplificador Óptico.')
     args = parser.parse_args()
 
     if args.log_level:
@@ -358,7 +443,10 @@ if __name__ == '__main__':
         # Run tests
         #tcp_reno_test(['reno', 'cubic'], [21, 81, 162], 1000, 250)
         tcp_tests(args.algorithms, args.delays, args.iperf_runtime, args.iperf_delayed_start)
-
+#        for i in range(5,args.Ganho_Amp,5):
+#            Ganho_Amp = i
+#            tcp_tests(args.algorithms, args.delays, args.iperf_runtime, args.iperf_delayed_start)
+        #change_topo(args.Ganho_Amp)
 
 
 

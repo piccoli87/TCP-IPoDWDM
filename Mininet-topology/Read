@@ -15,3 +15,7 @@ iperf-delayed-start -> time elapsed between the start of a connection by the fir
 
 Running example:
 # python3 topo.py -a reno bic cubic bbr -d 10 50 75 100 -i 1000 -j 250
+
+
+OBS.: The link length configuration must be done by changing the value in line 127 of the "topo.py" file, replacing "5*km" with the desired value.
+line 127     spans = [5*km]

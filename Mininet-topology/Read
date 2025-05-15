@@ -1,1 +1,17 @@
+Requirements:
+  Python3;
+  Mininet (https://mininet.org/)
+  Mininet-Optical (https://mininet-optical.org/walkthrough.html)
 
+
+In the terminal shell, run:
+# python3 topo.py -a <CCA> -d <delay> -i <iperf-runtime> -j <iperf-delayed-start>
+
+Where:
+CCA -> TCP Congestion Control Algorithm (Ex.: reno, bic, cubic, bbr);
+delay -> delay, in milliseconds, inserted into the transmission by iperf (Ex.: 10, 50, 75, 100);
+iperf-runtime -> connection duration time (Ex.: 1000 ms);
+iperf-delayed-start -> time elapsed between the start of a connection by the first peer (h1-h2) and the start of the connection by the other peer (h3-h4). (Ex.: 250ms)
+
+Running example:
+# python3 topo.py -a reno bic cubic bbr -d 10 50 75 100 -i 1000 -j 250

@@ -114,12 +114,8 @@ class DumbbellTopo(Topo):
 
 ###################################################
         # Link backbone routers (s1 & s2) together
-#        self.addLink(s1, s2, cls=TCLink, **br_params)
         # Ethernet links
-        #self.addLink(t1,s1)
         self.addLink(s1,t1)
-        #self.addLink(h1, t1, port2=1)
-        #self.addLink(h2,s2)
         self.addLink(s2,t2)
         
         # WDM link
@@ -127,7 +123,7 @@ class DumbbellTopo(Topo):
         amp1 = ('amp1', {'target_gain': 25*.22*dB})
         amp2 = ('amp2', {'target_gain': 40*.22*dB})
         amp3 = ('amp3', {'target_gain': 50*.22*dB})
-#        spans = [5*km, amp1, 5*km, amp2]
+
         spans = [5*km]
         
         self.addLink(r1, t1, cls=OpticalLink, port1=1, port2=2,
@@ -157,9 +153,6 @@ class DumbbellTopo(Topo):
         self.addLink(s4, h4, cls=TCLink, **hi_params)
         
 
-
-
-#def draw_fairness_plot(time_h1, bw_h1, time_h3, bw_h3, alg, delay,Ganho_Amp):
 def draw_fairness_plot(time_h1, bw_h1, time_h3, bw_h3, alg, delay):
     """ Draw the fairness plot for the iperf client hosts.
 
@@ -188,14 +181,11 @@ def draw_fairness_plot(time_h1, bw_h1, time_h3, bw_h3, alg, delay):
     plt.ylim(0,120)
     plt.grid()
 
-#    plt.title("TCP Fairness Graph\n{0} TCP Cong Control Alg Delay={1}ms Ganho Ampl={2}dB"
-#              .format(alg.capitalize(), delay,Ganho_Amp))
 
     plt.title("TCP Fairness Graph\n{0} TCP Cong Control Alg Delay={1}ms"
               .format(alg.capitalize(), delay))
 
     plt.legend()
-#    plt.grid(1250,100)
 
     plt.savefig('fairness_graph_{0}_{1}ms'.format(alg, delay))
     plt.close()
@@ -251,7 +241,6 @@ def parse_iperf_data(alg, delay, host_addrs):
 
     # Use time's first value as time=0, and convert the bps to Mbps
     first_row = True
-#    with open('iperf_{0}_h1-h2_{1}ms_GAmp_{2}_dB.txt'.format(alg, delay, Ganho_Amp),'r+') as fcsv:    
     with open('iperf_{0}_h1-h2_{1}ms.txt'.format(alg, delay),'r+') as fcsv:
         r = csv.DictReader(fcsv, delimiter=',', fieldnames=iperf_csv_header)
         for row in r:
@@ -275,7 +264,6 @@ def parse_iperf_data(alg, delay, host_addrs):
     # a few seconds after the first cmd, and convert the bps to Mbps
     first_row = True
    
-#    with open('iperf_{0}_h3-h4_{1}ms_GAmp_{2}_dB.txt'.format(alg, delay, Ganho_Amp), 'r+') as fcsv:   
     with open('iperf_{0}_h3-h4_{1}ms.txt'.format(alg, delay), 'r+') as fcsv:
         r = csv.DictReader(fcsv, delimiter=',', fieldnames=iperf_csv_header)
         for row in r:
@@ -370,9 +358,7 @@ def tcp_tests(algs, delays, iperf_runtime, iperf_delayed_start):
             # TODO: run iperfs without the -y C to see if we get errors setting the MSS. Use sudo?
             print("*** Starting iperf client h1...")
 
-#            popens[h1] = h1.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
-#                                   iperf_{1}_{3}_{4}ms_GAmp_{5}_dB.txt'
-#                                  .format(h2.IP(), alg, iperf_runtime, 'h1-h2', delay, Ganho_Amp), shell=True)
+
             popens[h1] = h1.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
                                    iperf_{1}_{3}_{4}ms.txt'
                                   .format(h2.IP(), alg, iperf_runtime, 'h1-h2', delay), shell=True)
@@ -382,9 +368,7 @@ def tcp_tests(algs, delays, iperf_runtime, iperf_delayed_start):
             sleep(iperf_delayed_start)
 
             print("*** Starting iperf client h3...")
-#            popens[h3] = h3.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
-#                                   iperf_{1}_{3}_{4}ms_GAmp_{5}_dB.txt'
-#                                  .format(h4.IP(), alg, iperf_runtime, 'h3-h4', delay, Ganho_Amp), shell=True)
+
             popens[h3] = h3.popen('iperf -c {0} -p 5001 -i 1 -w 16m -M 1460 -N -Z {1} -t {2} -y C > \
                                    iperf_{1}_{3}_{4}ms.txt'
                                   .format(h4.IP(), alg, iperf_runtime, 'h3-h4', delay), shell=True)
@@ -407,11 +391,8 @@ def tcp_tests(algs, delays, iperf_runtime, iperf_delayed_start):
             net.stop()
 
             print('*** Processing data...')
-#            data_fairness = parse_iperf_data(alg, delay, host_addrs, Ganho_Amp)
             data_fairness = parse_iperf_data(alg, delay, host_addrs)
 
-#            draw_fairness_plot(data_fairness['h1']['time'], data_fairness['h1']['Mbps'],
-#                               data_fairness['h3']['time'], data_fairness['h3']['Mbps'], alg, delay, Ganho_Amp)
             draw_fairness_plot(data_fairness['h1']['time'], data_fairness['h1']['Mbps'],
                                data_fairness['h3']['time'], data_fairness['h3']['Mbps'], alg, delay)
 
@@ -428,7 +409,6 @@ if __name__ == '__main__':
                         help='Time to wait before starting the second iperf client.')
     parser.add_argument('-l', '--log-level', default='info', help='Verbosity level of the logger. Uses `info` by default.')
     parser.add_argument('-t', '--run-test', action='store_true', help='Run the dumbbell topology test.')
-#    parser.add_argument('-ga', '--Ganho_Amp', type=int, default=10, help='Parâmetro de ganho do Amplificador Óptico.')
     args = parser.parse_args()
 
     if args.log_level:
@@ -439,14 +419,10 @@ if __name__ == '__main__':
 
     if args.run_test:
         dumbbell_test()
+    
     else:
-        # Run tests
-        #tcp_reno_test(['reno', 'cubic'], [21, 81, 162], 1000, 250)
         tcp_tests(args.algorithms, args.delays, args.iperf_runtime, args.iperf_delayed_start)
-#        for i in range(5,args.Ganho_Amp,5):
-#            Ganho_Amp = i
-#            tcp_tests(args.algorithms, args.delays, args.iperf_runtime, args.iperf_delayed_start)
-        #change_topo(args.Ganho_Amp)
+
 
 
 
